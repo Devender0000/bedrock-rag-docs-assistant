@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets and local config
+.env
+.streamlit/secrets.toml
+*.pem
+cdk.context.json
+
+# CDK build output
+cdk.out/
+
+# Downloaded docs and eval outputs (regenerate with the scripts)
+data/
+eval/results/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
