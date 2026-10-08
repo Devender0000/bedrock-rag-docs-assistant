@@ -8,8 +8,8 @@ documentation pages it came from, or a clear "not covered" reply when the docs d
 
 - A complete retrieval-augmented generation (RAG) system on AWS: ingestion, vector search, generation, API, and UI.
 - Everything defined as code with AWS CDK, so it deploys with one command and is removed with one command.
-- Safety and cost controls: Bedrock Guardrails (content filters, prompt-attack blocking, grounding checks),
-  an explicit "not covered" path, and an API key with throttling and a daily quota.
+- Safety and cost controls: Bedrock Guardrails (content filters and prompt-attack blocking, with optional
+  grounding checks), an explicit "not covered" path, and an API key with throttling and a daily quota.
 - Measured quality: an evaluation harness with 60 test questions that reports retrieval accuracy, answer accuracy,
   citation accuracy, refusal accuracy, and latency, so design changes can be compared with numbers.
 
@@ -84,7 +84,32 @@ evaluation with a matching `--label`.
 
 ### Results
 
-> Run the evaluation against your deployment and paste the output of `python -m eval.compare` here.
+Two runs of the same 60 questions against the same index and model (Amazon Nova Lite, Titan Text Embeddings V2,
+300-token chunks), differing only in the Guardrail's contextual grounding checks:
+
+| Metric | Grounding 0.5 + relevance 0.3 | Grounding checks off |
+|---|---|---|
+| Retrieval hit rate (answerable) | 100.0% | 100.0% |
+| Mean reciprocal rank | 0.94 | 0.94 |
+| Answer accuracy (keywords) | 70.8% | 97.9% |
+| Answer accuracy (LLM judge) | 60.4% | 85.4% |
+| Citation hit rate (answered) | 100.0% | 97.9% |
+| Answers with sources | 100.0% | 100.0% |
+| False refusals (answerable) | 29.2% | 0.0% |
+| Correct refusals (unanswerable) | 100.0% | 100.0% |
+| Answered when it should refuse | 0.0% | 0.0% |
+| Latency p50 / p95 | 3.03s / 5.65s | 2.81s / 4.90s |
+
+**What this showed.** Retrieval was already perfect, so the low first-run accuracy was not a search problem. All 14
+wrongly refused questions were blocked by the Guardrail, not by the model, and switching the grounding checks off
+removed every false refusal while the prompt's `NOT_COVERED` instruction still declined all 12 off-topic and
+prompt-injection questions. The deployed default is therefore checks off.
+
+**Caveats.** The 12 unanswerable questions are off-topic or injection attempts. They do not test an on-topic
+question the docs happen to leave unanswered, which is where grounding checks help most, and with them off nothing
+independent verifies the model's claims against the retrieved text. The judge is Nova Lite grading its own style of
+answer. Sixty questions are enough to see a 30-point change but not small differences. A middle threshold (for example
+grounding 0.3) was not evaluated. Run it with `cdk deploy -c grounding_threshold=0.3 -c relevance_threshold=off`.
 
 ## Project layout
 
@@ -107,6 +132,8 @@ Set at deploy time with CDK context, for example `cdk deploy -c chunk_max_tokens
 | `generation_model_id` | `us.amazon.nova-lite-v1:0` | Any Bedrock text model you have access to |
 | `chunk_max_tokens` | `300` | Fixed-size chunking |
 | `chunk_overlap_pct` | `20` | Overlap between chunks |
+| `grounding_threshold` | off | Guardrail grounding check (0 to 1; higher blocks more). Off by default, see Results |
+| `relevance_threshold` | off | Guardrail relevance check (0 to 1; higher blocks more). Off by default, see Results |
 
 The region comes from `CDK_DEFAULT_REGION` (default `us-east-1`).
 

@@ -10,8 +10,9 @@
    code is in `lambda_api/rag.py`.
 4. The Knowledge Base embeds the question, fetches the top 5 chunks from the S3 Vectors index, and passes them to the
    LLM with a prompt that says to answer only from those chunks, or reply `NOT_COVERED`.
-5. The Guardrail checks the input (content filters and prompt-attack detection) and the output (content filters and
-   contextual grounding against the retrieved chunks).
+5. The Guardrail checks the input (content filters and prompt-attack detection) and the output (content filters).
+   Contextual grounding checks against the retrieved chunks are supported but off by default (see the design
+   decisions below).
 6. The Lambda turns the reply into `{answer, covered, blocked, grounded, sources, session_id}`. Sources come from the
    citations and use the page title and URL stored as document metadata.
 
@@ -34,7 +35,7 @@
 | S3 Vectors as the vector store | No always-on cost, which suits a portfolio project | Newer service; tuned for cost rather than lowest query latency |
 | Fixed-size chunks (300 tokens, 20% overlap) | A simple, well-understood baseline that can be tuned through CDK context | May split ideas across chunks; the evaluation shows whether it matters |
 | Inline code samples during ingestion | The docs reference code in separate files; without this the code would never be indexed | Include options such as highlighted line ranges are ignored, so the whole file is inlined |
-| Two layers of refusal | The prompt's `NOT_COVERED` instruction handles most off-topic questions; the Guardrail's grounding check catches answers the chunks don't support | Both add latency and can occasionally refuse a valid question, which the evaluation measures as false refusals |
+| Refusal through the prompt, with Guardrail grounding checks optional | The prompt's `NOT_COVERED` instruction refused all 12 off-topic and injection test questions. With grounding 0.5 and relevance 0.3 the Guardrail also blocked 14 of 48 valid questions (29.2% false refusals); with the checks off that fell to 0% and judged accuracy rose from 60.4% to 85.4% | With the checks off, nothing independent verifies answers against the retrieved text. A middle threshold was not evaluated |
 | API key, throttle and quota on API Gateway | A public demo cannot run up an unexpected bill | A shared key is not per-user authentication |
 | `lambda_api/rag.py` shared with the evaluation | The evaluation measures the exact prompt and parsing code that production uses | The Lambda package contains a module the handler is the only user of at runtime |
 | Infrastructure as code (CDK) | Repeatable deploys and a clean teardown | Requires the CDK toolchain |

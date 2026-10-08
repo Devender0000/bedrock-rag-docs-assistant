@@ -51,6 +51,8 @@ class RagStack(Stack):
         generation_model_id: str,
         chunk_max_tokens: int = 300,
         chunk_overlap_pct: int = 20,
+        grounding_threshold: float | None = None,
+        relevance_threshold: float | None = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -202,6 +204,25 @@ class RagStack(Stack):
             )
         )
 
+        # A threshold of None switches that contextual grounding check off.
+        grounding_filters = [
+            bedrock.CfnGuardrail.ContextualGroundingFilterConfigProperty(
+                type=filter_type, threshold=threshold
+            )
+            for filter_type, threshold in (
+                ("GROUNDING", grounding_threshold),
+                ("RELEVANCE", relevance_threshold),
+            )
+            if threshold is not None
+        ]
+        grounding_policy = (
+            bedrock.CfnGuardrail.ContextualGroundingPolicyConfigProperty(
+                filters_config=grounding_filters
+            )
+            if grounding_filters
+            else None
+        )
+
         guardrail = bedrock.CfnGuardrail(
             self,
             "Guardrail",
@@ -214,22 +235,15 @@ class RagStack(Stack):
             content_policy_config=bedrock.CfnGuardrail.ContentPolicyConfigProperty(
                 filters_config=content_filters
             ),
-            contextual_grounding_policy_config=bedrock.CfnGuardrail.ContextualGroundingPolicyConfigProperty(
-                filters_config=[
-                    bedrock.CfnGuardrail.ContextualGroundingFilterConfigProperty(
-                        type="GROUNDING", threshold=0.7
-                    ),
-                    bedrock.CfnGuardrail.ContextualGroundingFilterConfigProperty(
-                        type="RELEVANCE", threshold=0.5
-                    ),
-                ]
-            ),
+            contextual_grounding_policy_config=grounding_policy,
         )
+        # A guardrail version is a frozen snapshot, so the settings go in its description:
+        # changing them creates a new version that the Lambda is then pointed at.
         guardrail_version = bedrock.CfnGuardrailVersion(
             self,
             "GuardrailVersionResource",
             guardrail_identifier=guardrail.attr_guardrail_id,
-            description="Initial version",
+            description=f"grounding={grounding_threshold}, relevance={relevance_threshold}",
         )
 
         # ------------------------------------------------------------------

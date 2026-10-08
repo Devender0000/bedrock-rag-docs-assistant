@@ -75,21 +75,62 @@ def test_data_source_chunking_config(template):
     )
 
 
-def test_guardrail_has_grounding_and_prompt_attack_filters(template):
+def test_guardrail_has_prompt_attack_filter_and_no_grounding_check_by_default(template):
     template.has_resource_properties(
         "AWS::Bedrock::Guardrail",
         {
-            "ContextualGroundingPolicyConfig": {
-                "FiltersConfig": Match.array_with(
-                    [Match.object_like({"Type": "GROUNDING", "Threshold": 0.7})]
-                )
-            },
+            "ContextualGroundingPolicyConfig": Match.absent(),
             "ContentPolicyConfig": {
                 "FiltersConfig": Match.array_with(
                     [Match.object_like({"Type": "PROMPT_ATTACK", "OutputStrength": "NONE"})]
                 )
             },
         },
+    )
+
+
+def _guardrail_template(**kwargs):
+    stack = RagStack(
+        cdk.App(),
+        "GuardrailVariant",
+        embedding_model_id="amazon.titan-embed-text-v2:0",
+        generation_model_id="us.amazon.nova-lite-v1:0",
+        env=cdk.Environment(account="123456789012", region="us-east-1"),
+        **kwargs,
+    )
+    return Template.from_stack(stack)
+
+
+def test_grounding_checks_can_be_switched_on():
+    variant = _guardrail_template(grounding_threshold=0.5, relevance_threshold=0.3)
+    variant.has_resource_properties(
+        "AWS::Bedrock::Guardrail",
+        {
+            "ContextualGroundingPolicyConfig": {
+                "FiltersConfig": Match.array_with(
+                    [
+                        Match.object_like({"Type": "GROUNDING", "Threshold": 0.5}),
+                        Match.object_like({"Type": "RELEVANCE", "Threshold": 0.3}),
+                    ]
+                )
+            }
+        },
+    )
+
+
+def test_changing_thresholds_changes_the_guardrail_version_description():
+    variant = _guardrail_template(grounding_threshold=0.8, relevance_threshold=None)
+    variant.has_resource_properties(
+        "AWS::Bedrock::Guardrail",
+        {
+            "ContextualGroundingPolicyConfig": {
+                "FiltersConfig": [{"Type": "GROUNDING", "Threshold": 0.8}]
+            }
+        },
+    )
+    variant.has_resource_properties(
+        "AWS::Bedrock::GuardrailVersion",
+        {"Description": "grounding=0.8, relevance=None"},
     )
 
 
